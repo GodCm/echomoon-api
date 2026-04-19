@@ -47,10 +47,10 @@ const CharacterSchema = new Schema<ICharacter>({
 // Convert _id to id in JSON response
 CharacterSchema.set('toJSON', {
   virtuals: true,
-  transform: (_doc, ret) => {
-    ret.id = ret._id.toString()
-    delete ret._id
-    delete ret.__v
+  transform(_doc: unknown, ret: ICharacter & { _id: unknown; __v: number }) {
+    ret.id = String(ret._id)
+    delete (ret as Partial<ICharacter & { _id: unknown; __v: number }>)._id
+    delete (ret as Partial<ICharacter & { _id: unknown; __v: number }>).__v
     return ret
   }
 })

@@ -23,10 +23,10 @@ const UserSchema = new Schema<IUser>({
 // Convert _id to id in JSON response
 UserSchema.set('toJSON', {
   virtuals: true,
-  transform: (_doc, ret) => {
-    ret.id = ret._id.toString()
-    delete ret._id
-    delete ret.__v
+  transform(_doc: unknown, ret: IUser & { _id: unknown; __v: number }) {
+    ret.id = String(ret._id)
+    delete (ret as Partial<IUser & { _id: unknown; __v: number }>)._id
+    delete (ret as Partial<IUser & { _id: unknown; __v: number }>).__v
     return ret
   }
 })

@@ -33,10 +33,10 @@ const ConversationSchema = new Schema<IConversation>({
 // Convert _id to id in JSON response
 ConversationSchema.set('toJSON', {
   virtuals: true,
-  transform: (_doc, ret) => {
-    ret.id = ret._id.toString()
-    delete ret._id
-    delete ret.__v
+  transform(_doc: unknown, ret: IConversation & { _id: unknown; __v: number }) {
+    ret.id = String(ret._id)
+    delete (ret as Partial<IConversation & { _id: unknown; __v: number }>)._id
+    delete (ret as Partial<IConversation & { _id: unknown; __v: number }>).__v
     return ret
   }
 })
