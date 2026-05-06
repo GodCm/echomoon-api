@@ -8,18 +8,30 @@ import { checkContent } from '../services/moderation.js'
 
 const router = Router()
 
+// Helper: get user subscription by clerkUserId
+async function getUserSubscription(clerkUserId: string): Promise<'free' | 'pro'> {
+  const user = await User.findOne({ clerkUserId })
+  return (user?.subscription as 'free' | 'pro') || 'free'
+}
+
 // Send message and get AI response
 router.post('/message', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.userId!
+    const clerkUserId = req.clerkUserId!
     const { characterId, message } = req.body
-    
+
     if (!characterId) {
       return res.status(400).json({ error: 'Missing characterId' })
     }
 
     // Get character
-    const character = await Character.findOne({ _id: characterId, userId })
+    const character = await Character.findOne({
+      _id: characterId,
+      $or: [
+        { clerkUserId },
+        { userId: clerkUserId }
+      ]
+    })
     if (!character) {
       return res.status(404).json({ error: 'Character not found' })
     }
@@ -35,20 +47,26 @@ router.post('/message', authMiddleware, async (req: AuthRequest, res: Response) 
     }
 
     // Get or create conversation
-    let conversation = await Conversation.findOne({ characterId, userId })
+    let conversation = await Conversation.findOne({
+      characterId,
+      $or: [
+        { clerkUserId },
+        { userId: clerkUserId }
+      ]
+    })
 
     // Check message limit for free users
-    const user = await User.findById(userId)
-    if (user?.subscription === 'free') {
+    const subscription = await getUserSubscription(clerkUserId)
+    if (subscription === 'free') {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
-      
+
       const todayMessages = conversation?.messages.filter(
         m => m.createdAt >= today
       ).length || 0
 
       if (todayMessages >= 10) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'daily_limit_reached',
           message: 'You have reached your daily message limit. Upgrade to Pro for unlimited messages.'
         })
@@ -58,7 +76,8 @@ router.post('/message', authMiddleware, async (req: AuthRequest, res: Response) 
     if (!conversation) {
       conversation = new Conversation({
         characterId,
-        userId,
+        userId: clerkUserId,
+        clerkUserId,
         messages: [],
         keywordMemory: []
       })
@@ -81,7 +100,7 @@ router.post('/message', authMiddleware, async (req: AuthRequest, res: Response) 
       createdAt: new Date()
     })
 
-    // Update memory (extract keywords - simplified version)
+    // Update memory
     if (conversation.messages.length % 4 === 0) {
       const lastMessages = conversation.messages.slice(-4)
       const keywords = extractKeywords(lastMessages.map(m => m.content))
@@ -108,13 +127,17 @@ router.post('/message', authMiddleware, async (req: AuthRequest, res: Response) 
 // Get conversation history
 router.get('/:characterId', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const conversation = await Conversation.findOne({ 
-      characterId: req.params.characterId, 
-      userId: req.userId 
+    const clerkUserId = req.clerkUserId!
+    const conversation = await Conversation.findOne({
+      characterId: req.params.characterId,
+      $or: [
+        { clerkUserId },
+        { userId: clerkUserId }
+      ]
     })
 
-    res.json({ 
-      conversation: conversation || { messages: [], keywordMemory: [] } 
+    res.json({
+      conversation: conversation || { messages: [], keywordMemory: [] }
     })
   } catch (error) {
     res.status(500).json({ error: 'Failed to get conversation' })
@@ -124,7 +147,7 @@ router.get('/:characterId', authMiddleware, async (req: AuthRequest, res: Respon
 // Simple keyword extraction
 function extractKeywords(texts: string[]): string[] {
   const stopWords = ['the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare', 'ought', 'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just', 'and', 'but', 'if', 'or', 'because', 'as', 'until', 'while', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'what', 'which', 'who', 'whom', 'their', 'them', 'his', 'her', 'my', 'your', 'our', 'me', 'him', 'us']
-  
+
   const words = texts.join(' ').toLowerCase().split(/\s+/)
   return words
     .filter(word => word.length > 3 && !stopWords.includes(word))

@@ -8,7 +8,8 @@ export interface IMessage {
 
 export interface IConversation extends Document {
   characterId: string
-  userId: string
+  userId: string          // old: MongoDB ObjectId (kept for migration)
+  clerkUserId?: string    // new: Clerk user ID
   messages: IMessage[]
   keywordMemory: string[]
   lastUpdated: Date
@@ -23,7 +24,8 @@ const MessageSchema = new Schema<IMessage>({
 
 const ConversationSchema = new Schema<IConversation>({
   characterId: { type: String, required: true, index: true },
-  userId: { type: String, required: true, index: true },
+  userId: { type: String, required: true, index: true },  // old MongoDB ObjectId
+  clerkUserId: { type: String, index: true, sparse: true },  // Clerk user ID
   messages: [MessageSchema],
   keywordMemory: [{ type: String }],
   lastUpdated: { type: Date, default: Date.now },

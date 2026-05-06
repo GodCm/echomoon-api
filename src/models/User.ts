@@ -5,8 +5,9 @@ export interface IUser extends Document {
   password?: string
   name?: string
   avatar?: string
-  provider: 'google' | 'apple' | 'email'
+  provider: 'google' | 'apple' | 'email' | 'clerk'
   subscription: 'free' | 'pro'
+  clerkUserId?: string  // Clerk's user ID for linking accounts
   createdAt: Date
 }
 
@@ -15,8 +16,9 @@ const UserSchema = new Schema<IUser>({
   password: { type: String },
   name: { type: String },
   avatar: { type: String },
-  provider: { type: String, enum: ['google', 'apple', 'email'], default: 'email' },
+  provider: { type: String, enum: ['google', 'apple', 'email', 'clerk'], default: 'email' },
   subscription: { type: String, enum: ['free', 'pro'], default: 'free' },
+  clerkUserId: { type: String, unique: true, sparse: true },
   createdAt: { type: Date, default: Date.now }
 })
 

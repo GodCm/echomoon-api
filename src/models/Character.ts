@@ -1,7 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose'
 
 export interface ICharacter extends Document {
-  userId: string
+  userId: string          // old: MongoDB ObjectId (kept for migration)
+  clerkUserId?: string    // new: Clerk user ID
   name: string
   avatar: string
   gender?: 'male' | 'female' | 'other'
@@ -23,7 +24,8 @@ export interface ICharacter extends Document {
 }
 
 const CharacterSchema = new Schema<ICharacter>({
-  userId: { type: String, required: true, index: true },
+  userId: { type: String, required: true, index: true },  // old MongoDB ObjectId
+  clerkUserId: { type: String, index: true, sparse: true },  // Clerk user ID
   name: { type: String, required: true },
   avatar: { type: String, default: '🌙' },
   gender: { type: String, enum: ['male', 'female', 'other'], default: 'other' },

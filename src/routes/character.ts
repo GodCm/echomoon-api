@@ -6,17 +6,23 @@ import axios from 'axios'
 
 const router = Router()
 
+// Helper: get user subscription by clerkUserId
+async function getUserSubscription(clerkUserId: string): Promise<'free' | 'pro'> {
+  const user = await User.findOne({ clerkUserId })
+  return (user?.subscription as 'free' | 'pro') || 'free'
+}
+
 // Analyze chat history to extract character traits
 router.post('/analyze-chat', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { chatText } = req.body
-    
+
     if (!chatText || chatText.trim().length < 50) {
       return res.status(400).json({ error: 'Chat text is too short. Please provide more messages.' })
     }
 
     const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY
-    
+
     if (!DEEPSEEK_API_KEY) {
       return res.status(500).json({ error: 'AI service not configured' })
     }
@@ -28,7 +34,7 @@ router.post('/analyze-chat', authMiddleware, async (req: AuthRequest, res: Respo
         messages: [
           {
             role: 'system',
-            content: `You are analyzing a chat conversation between two people (likely in a romantic relationship that ended). 
+            content: `You are analyzing a chat conversation between two people (likely in a romantic relationship that ended).
 Based on their messages, extract information about the OTHER person's personality and communication style.
 
 Extract and return a JSON with these fields:
@@ -57,13 +63,11 @@ Return ONLY valid JSON, no other text. Example format:
     )
 
     const content = response.data.choices[0]?.message?.content || '{}'
-    
-    // Parse JSON from response
+
     let analysis
     try {
       analysis = JSON.parse(content)
     } catch {
-      // If parsing fails, try to extract JSON from the text
       const jsonMatch = content.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
         analysis = JSON.parse(jsonMatch[0])
@@ -72,7 +76,6 @@ Return ONLY valid JSON, no other text. Example format:
       }
     }
 
-    // Validate and sanitize the response
     const result = {
       personality: analysis.personality || '',
       speakingStyle: analysis.speakingStyle || '',
@@ -90,19 +93,25 @@ Return ONLY valid JSON, no other text. Example format:
 // Create character
 router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.userId!
-    const user = await User.findById(userId)
-    
+    const clerkUserId = req.clerkUserId!
+    const subscription = await getUserSubscription(clerkUserId)
+
     // Check character limit for free users
-    if (user?.subscription === 'free') {
-      const characterCount = await Character.countDocuments({ userId })
+    if (subscription === 'free') {
+      const characterCount = await Character.countDocuments({
+        $or: [
+          { clerkUserId },
+          { userId: clerkUserId }  // also check clerkUserId in userId field (string equality)
+        ]
+      })
       if (characterCount >= 1) {
         return res.status(403).json({ error: 'Free users can only create 1 character. Upgrade to Pro for unlimited.' })
       }
     }
 
     const character = new Character({
-      userId,
+      userId: clerkUserId,  // use clerkUserId as string for new records
+      clerkUserId,
       ...req.body
     })
 
@@ -117,7 +126,13 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
 // Get all characters for user
 router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const characters = await Character.find({ userId: req.userId }).sort({ createdAt: -1 })
+    const clerkUserId = req.clerkUserId!
+    const characters = await Character.find({
+      $or: [
+        { clerkUserId },
+        { userId: clerkUserId }
+      ]
+    }).sort({ createdAt: -1 })
     res.json({ characters })
   } catch (error) {
     console.error('Get characters error:', error)
@@ -128,7 +143,14 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
 // Get single character
 router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const character = await Character.findOne({ _id: req.params.id, userId: req.userId })
+    const clerkUserId = req.clerkUserId!
+    const character = await Character.findOne({
+      _id: req.params.id,
+      $or: [
+        { clerkUserId },
+        { userId: clerkUserId }
+      ]
+    })
     if (!character) {
       return res.status(404).json({ error: 'Character not found' })
     }
@@ -141,8 +163,15 @@ router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
 // Update character
 router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
+    const clerkUserId = req.clerkUserId!
     const character = await Character.findOneAndUpdate(
-      { _id: req.params.id, userId: req.userId },
+      {
+        _id: req.params.id,
+        $or: [
+          { clerkUserId },
+          { userId: clerkUserId }
+        ]
+      },
       { ...req.body, updatedAt: new Date() },
       { new: true }
     )
@@ -158,7 +187,14 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
 // Delete character
 router.delete('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const character = await Character.findOneAndDelete({ _id: req.params.id, userId: req.userId })
+    const clerkUserId = req.clerkUserId!
+    const character = await Character.findOneAndDelete({
+      _id: req.params.id,
+      $or: [
+        { clerkUserId },
+        { userId: clerkUserId }
+      ]
+    })
     if (!character) {
       return res.status(404).json({ error: 'Character not found' })
     }
