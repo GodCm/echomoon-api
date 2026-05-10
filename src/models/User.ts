@@ -19,6 +19,7 @@ const UserSchema = new Schema<IUser>({
   provider: { type: String, enum: ['google', 'apple', 'email', 'clerk'], default: 'email' },
   subscription: { type: String, enum: ['free', 'pro'], default: 'free' },
   clerkUserId: { type: String, unique: true, sparse: true },
+  creemCustomerId: { type: String, unique: true, sparse: true },
   createdAt: { type: Date, default: Date.now }
 })
 

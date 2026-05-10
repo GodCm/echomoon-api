@@ -15,12 +15,12 @@ const CREEM_PRODUCT_ID = process.env.CREEM_PRODUCT_ID || ''
 const SUCCESS_URL = process.env.CREEM_SUCCESS_URL || 'https://echomoon-web.vercel.app/dashboard'
 const CANCEL_URL = process.env.CREEM_CANCEL_URL || 'https://echomoon-web.vercel.app/subscribe'
 
-// Creem API base URL (typically these would be the endpoints)
-const CREEM_API_BASE_URL = 'https://api.creem.io' // Adjust based on actual Creem API URL
+// Creem API base URL
+const CREEM_API_BASE_URL = 'https://api.creem.io'
 
 /**
- * Create Creem checkout session
- * This endpoint generates a checkout URL for the user to complete payment
+ * GET /api/creem/confirm-upgrade
+ * Frontend calls this when user returns from Creem checkout (success_url contains clerkUserId)
  */
 router.post('/create-checkout', async (req: Request, res: Response) => {
   try {
@@ -41,18 +41,10 @@ router.post('/create-checkout', async (req: Request, res: Response) => {
     }
     
     // Call Creem API to create checkout session
-    // Note: Adjust the endpoint and payload based on actual Creem API docs
     const checkoutPayload: any = {
       product_id: finalProductId,
-      success_url: SUCCESS_URL,
+      success_url: SUCCESS_URL + (SUCCESS_URL.includes('?') ? '&' : '?') + 'clerkUserId=' + String(clerkUserId),
       cancel_url: CANCEL_URL
-    }
-    
-    // Add metadata only if clerkUserId is provided
-    if (clerkUserId) {
-      checkoutPayload.metadata = {
-        clerkUserId: String(clerkUserId)
-      }
     }
     
     const response = await axios.post(
@@ -77,6 +69,42 @@ router.post('/create-checkout', async (req: Request, res: Response) => {
       error: 'Failed to create checkout session',
       details: error.response?.data || error.message
     })
+  }
+})
+
+/**
+ * POST /api/creem/confirm-upgrade
+ * Frontend calls this when user returns from Creem checkout
+ * Body: { clerkUserId }
+ */
+router.post('/confirm-upgrade', async (req: Request, res: Response) => {
+  try {
+    const { clerkUserId } = req.body
+    
+    if (!clerkUserId) {
+      return res.status(400).json({ error: 'clerkUserId is required' })
+    }
+    
+    const user = await User.findOne({ clerkUserId })
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+    
+    // Upgrade user to pro
+    user.subscription = 'pro'
+    await user.save()
+    
+    console.log(`User ${clerkUserId} upgraded to pro via confirm-upgrade`)
+    
+    res.json({
+      success: true,
+      subscription: user.subscription
+    })
+    
+  } catch (error: any) {
+    console.error('Error confirming upgrade:', error)
+    res.status(500).json({ error: 'Failed to confirm upgrade' })
   }
 })
 
@@ -180,11 +208,19 @@ async function handleCheckoutCompleted(object: any) {
   try {
     const { customer, metadata } = object
     
-    // Get user ID from metadata (we'll pass this when creating checkout)
-    const clerkUserId = metadata?.clerkUserId
+    // Try to get clerkUserId from metadata first
+    let clerkUserId = metadata?.clerkUserId
+    
+    // If not in metadata, try to find user by creemCustomerId
+    if (!clerkUserId && customer?.id) {
+      const user = await User.findOne({ creemCustomerId: customer.id })
+      if (user) {
+        clerkUserId = user.clerkUserId
+      }
+    }
     
     if (!clerkUserId) {
-      console.error('No clerkUserId in checkout metadata')
+      console.error('No clerkUserId in checkout metadata or customer lookup')
       return
     }
     
@@ -193,6 +229,10 @@ async function handleCheckoutCompleted(object: any) {
     
     if (user) {
       user.subscription = 'pro'
+      // Store creem customer ID for future webhook lookups
+      if (customer?.id) {
+        user.creemCustomerId = customer.id
+      }
       await user.save()
       console.log(`User ${clerkUserId} upgraded to pro via checkout`)
     } else {
@@ -211,10 +251,19 @@ async function handleSubscriptionPaid(object: any) {
   try {
     const { customer, metadata, current_period_end_date } = object
     
-    const clerkUserId = metadata?.clerkUserId
+    // Try to get clerkUserId from metadata first
+    let clerkUserId = metadata?.clerkUserId
+    
+    // If not in metadata, try to find user by creemCustomerId
+    if (!clerkUserId && customer?.id) {
+      const user = await User.findOne({ creemCustomerId: customer.id })
+      if (user) {
+        clerkUserId = user.clerkUserId
+      }
+    }
     
     if (!clerkUserId) {
-      console.error('No clerkUserId in subscription metadata')
+      console.error('No clerkUserId in subscription metadata or customer lookup')
       return
     }
     
@@ -222,6 +271,10 @@ async function handleSubscriptionPaid(object: any) {
     
     if (user) {
       user.subscription = 'pro'
+      // Store creem customer ID for future webhook lookups
+      if (customer?.id) {
+        user.creemCustomerId = customer.id
+      }
       // Could also store subscription end date if needed
       await user.save()
       console.log(`User ${clerkUserId} subscription paid, access granted`)
@@ -240,13 +293,27 @@ async function handleSubscriptionPaid(object: any) {
 async function handleSubscriptionActive(object: any) {
   try {
     const { customer, metadata } = object
-    const clerkUserId = metadata?.clerkUserId
+    
+    // Try to get clerkUserId from metadata first
+    let clerkUserId = metadata?.clerkUserId
+    
+    // If not in metadata, try to find user by creemCustomerId
+    if (!clerkUserId && customer?.id) {
+      const user = await User.findOne({ creemCustomerId: customer.id })
+      if (user) {
+        clerkUserId = user.clerkUserId
+      }
+    }
     
     if (!clerkUserId) return
     
     const user = await User.findOne({ clerkUserId })
     if (user) {
       user.subscription = 'pro'
+      // Store creem customer ID for future webhook lookups
+      if (customer?.id) {
+        user.creemCustomerId = customer.id
+      }
       await user.save()
       console.log(`User ${clerkUserId} subscription active`)
     }
@@ -261,7 +328,17 @@ async function handleSubscriptionActive(object: any) {
 async function handleSubscriptionCanceled(object: any) {
   try {
     const { customer, metadata } = object
-    const clerkUserId = metadata?.clerkUserId
+    
+    // Try to get clerkUserId from metadata first
+    let clerkUserId = metadata?.clerkUserId
+    
+    // If not in metadata, try to find user by creemCustomerId
+    if (!clerkUserId && customer?.id) {
+      const user = await User.findOne({ creemCustomerId: customer.id })
+      if (user) {
+        clerkUserId = user.clerkUserId
+      }
+    }
     
     if (!clerkUserId) return
     
@@ -318,7 +395,17 @@ async function handleSubscriptionPastDue(object: any) {
 async function handleRefundCreated(object: any) {
   try {
     const { customer, metadata } = object
-    const clerkUserId = metadata?.clerkUserId
+    
+    // Try to get clerkUserId from metadata first
+    let clerkUserId = metadata?.clerkUserId
+    
+    // If not in metadata, try to find user by creemCustomerId
+    if (!clerkUserId && customer?.id) {
+      const user = await User.findOne({ creemCustomerId: customer.id })
+      if (user) {
+        clerkUserId = user.clerkUserId
+      }
+    }
     
     if (!clerkUserId) return
     
