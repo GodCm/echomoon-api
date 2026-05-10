@@ -42,12 +42,16 @@ router.post('/create-checkout', async (req: Request, res: Response) => {
     
     // Call Creem API to create checkout session
     // Note: Adjust the endpoint and payload based on actual Creem API docs
-    const checkoutPayload = {
+    const checkoutPayload: any = {
       product_id: finalProductId,
       success_url: SUCCESS_URL,
-      cancel_url: CANCEL_URL,
-      metadata: {
-        clerkUserId
+      cancel_url: CANCEL_URL
+    }
+    
+    // Add metadata only if clerkUserId is provided
+    if (clerkUserId) {
+      checkoutPayload.metadata = {
+        clerkUserId: String(clerkUserId)
       }
     }
     
