@@ -2,41 +2,30 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import mongoose from 'mongoose'
+import bodyParser from 'body-parser'
 
 // Routes
 import authRoutes from './routes/auth.js'
 import characterRoutes from './routes/character.js'
 import conversationRoutes from './routes/conversation.js'
+import creemRoutes from './routes/creem.js'
 
 dotenv.config()
 
 const app = express()
-const PORT = process.env.PORT || 3000
 
-// Middleware
-const allowedOrigins = [
-  'http://localhost:5173',
-  'https://echomoon-web.vercel.app',
-  process.env.FRONTEND_URL
-].filter(Boolean)
+// Middleware for raw body (needed for Creem webhook signature verification)
+// This must be before express.json() for the webhook route
+app.use('/api/creem/webhook', bodyParser.raw({ type: 'application/json' }))
 
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl)
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true)
-    } else {
-      callback(new Error('Not allowed by CORS'))
-    }
-  },
-  credentials: true
-}))
+// Regular JSON parsing for other routes
 app.use(express.json())
 
 // Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/characters', characterRoutes)
 app.use('/api/conversations', conversationRoutes)
+app.use('/api/creem', creemRoutes)
 
 // Health check
 app.get('/api/health', (_req, res) => {
