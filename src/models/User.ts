@@ -8,6 +8,7 @@ export interface IUser extends Document {
   provider: 'google' | 'apple' | 'email' | 'clerk'
   subscription: 'free' | 'pro'
   clerkUserId?: string  // Clerk's user ID for linking accounts
+  creemCustomerId?: string  // Creem customer ID for webhook lookup
   createdAt: Date
 }
 
@@ -23,13 +24,12 @@ const UserSchema = new Schema<IUser>({
   createdAt: { type: Date, default: Date.now }
 })
 
-// Convert _id to id in JSON response
 UserSchema.set('toJSON', {
   virtuals: true,
-  transform(_doc: unknown, ret: IUser & { _id: unknown; __v: number }) {
+  transform(_doc: unknown, ret: any) {
     ret.id = String(ret._id)
-    delete (ret as Partial<IUser & { _id: unknown; __v: number }>)._id
-    delete (ret as Partial<IUser & { _id: unknown; __v: number }>).__v
+    delete ret._id
+    delete ret.__v
     return ret
   }
 })
