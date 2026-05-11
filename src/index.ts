@@ -14,6 +14,13 @@ dotenv.config()
 
 const app = express()
 
+// CORS configuration - allow frontend domain
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://www.echomoon.it.com'
+app.use(cors({
+  origin: FRONTEND_URL,
+  credentials: true,
+}))
+
 // Middleware for raw body (needed for Creem webhook signature verification)
 // This must be before express.json() for the webhook route
 app.use('/api/creem/webhook', bodyParser.raw({ type: 'application/json' }))
