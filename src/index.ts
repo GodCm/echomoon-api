@@ -14,10 +14,24 @@ dotenv.config()
 
 const app = express()
 
-// CORS configuration - allow frontend domain
+// CORS configuration - allow frontend domains
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://www.echomoon.it.com'
+const ALLOWED_ORIGINS = [
+  FRONTEND_URL,
+  'https://echomoon.it.com',
+  'https://www.echomoon.it.com',
+  'http://localhost:5173',
+  'http://localhost:3000',
+]
+
 app.use(cors({
-  origin: FRONTEND_URL,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, Postman)
+    if (!origin) return callback(null, true)
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true)
+    console.warn(`CORS blocked request from origin: ${origin}`)
+    callback(new Error('CORS policy: origin not allowed'))
+  },
   credentials: true,
 }))
 
